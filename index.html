@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>OBD2 Pro HUD 9" & Trip Stats</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #060911;
+            --bg-card: rgba(18, 25, 43, 0.88);
+            --border-card: rgba(51, 65, 85, 0.65);
+            --accent: #22c55e;
+            --accent-glow: rgba(34, 197, 94, 0.25);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        [data-theme="cyber"] {
+            --bg-main: #050b14;
+            --bg-card: rgba(12, 24, 44, 0.88);
+            --border-card: rgba(14, 165, 233, 0.45);
+            --accent: #06b6d4;
+            --accent-glow: rgba(6, 182, 212, 0.25);
+        }
+        [data-theme="sport"] {
+            --bg-main: #0c0607;
+            --bg-card: rgba(28, 14, 18, 0.9);
+            --border-card: rgba(239, 68, 68, 0.45);
+            --accent: #ef4444;
+            --accent-glow: rgba(239, 68, 68, 0.25);
+        }
+        [data-theme="amber"] {
+            --bg-main: #0b0804;
+            --bg-card: rgba(28, 20, 12, 0.9);
+            --border-card: rgba(245, 158, 11, 0.45);
+            --accent: #f59e0b;
+            --accent-glow: rgba(245, 158, 11, 0.25);
+        }
+        [data-theme="violet"] {
+            --bg-main: #080511;
+            --bg-card: rgba(21, 14, 38, 0.9);
+            --border-card: rgba(168, 85, 247, 0.45);
+            --accent: #a855f7;
+            --accent-glow: rgba(168, 85, 247, 0.25);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .hud-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.65), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+            border-radius: 1.35rem;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1.1rem 1.3rem;
+            transition: border-color 0.25s, transform 0.2s;
+        }
+        .hud-card::before {
+            content: '';
+            position: absolute;
+            top: -40px;
+            right: -40px;
+            width: 110px;
+            height: 110px;
+            background: var(--accent-glow);
+            border-radius: 50%;
+            filter: blur(28px);
+            pointer-events: none;
+        }
+        .accent-text {
+            color: var(--accent);
+        }
+        .accent-bg {
+            background-color: var(--accent);
+        }
+        .accent-border {
+            border-color: var(--accent);
+        }
+        .bar-fill {
+            background: var(--accent);
+            box-shadow: 0 0 12px var(--accent);
+            transition: width 0.25s ease-out;
+        }
+        .floating-btn {
+            background: rgba(15, 23, 42, 0.88);
+            border: 1px solid rgba(71, 85, 105, 0.7);
+            backdrop-filter: blur(8px);
+            color: #e2e8f0;
+            transition: all 0.2s;
+        }
+        .floating-btn:active {
+            transform: scale(0.93);
+        }
+        .tab-active {
+            background-color: var(--accent);
+            color: #000;
+            font-weight: 700;
+        }
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #090d16;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body data-theme="emerald" class="flex flex-col justify-between p-3 sm:p-4">
+
+    <!-- Плавающая мини-панель управления в правом верхнем углу -->
+    <div class="fixed top-3 right-3 z-40 flex items-center gap-2">
+        <!-- Кнопка быстрого подключения / статуса -->
+        <button id="quickConnectBtn" class="floating-btn px-3.5 py-2 rounded-2xl flex items-center gap-2 text-xs font-semibold shadow-lg">
+            <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+            <span id="statusLabel">Подключить</span>
+        </button>
+
+        <!-- Кнопка Окна Счётчика Поездки и Графиков -->
+        <button id="openStatsBtn" title="Счётчик топлива, рублей и графики" class="floating-btn px-3 py-2 rounded-2xl flex items-center gap-1.5 text-xs font-semibold shadow-lg hover:text-white">
+            <i class="fa-solid fa-chart-pie accent-text"></i>
+            <span class="hidden sm:inline">Счётчик</span>
+        </button>
+
+        <!-- Небольшая кнопка Терминала -->
+        <button id="openTerminalBtn" title="Терминал ELM327" class="floating-btn w-9 h-9 rounded-2xl flex items-center justify-center text-xs shadow-lg hover:text-white">
+            <i class="fa-solid fa-terminal accent-text"></i>
+        </button>
+
+        <!-- Кнопка полноэкранного режима -->
+        <button id="fullscreenBtn" title="Полный экран" class="floating-btn w-9 h-9 rounded-2xl flex items-center justify-center text-xs shadow-lg hover:text-white">
+            <i class="fa-solid fa-expand"></i>
+        </button>
+
+        <!-- Кнопка Настроек (Шестерёнка) -->
+        <button id="openSettingsBtn" title="Настройки" class="floating-btn w-9 h-9 rounded-2xl flex items-center justify-center text-sm shadow-lg hover:text-white">
+            <i class="fa-solid fa-gear accent-text"></i>
+        </button>
+    </div>
+
+    <!-- Индикатор активного профиля авто и краткой стоимости поездки (слева вверху) -->
+    <div class="fixed top-3.5 left-4 z-30 flex items-center gap-3">
+        <div class="flex items-center gap-2 opacity-80">
+            <i class="fa-solid fa-car-side text-xs accent-text"></i>
+            <span id="activeProfileBadge" class="text-[11px] font-semibold tracking-wider uppercase text-slate-300">Mitsubishi Outlander (2011–2022)</span>
+        </div>
+        <button id="quickStatsBadge" class="bg-slate-900/80 border border-slate-700/70 rounded-xl px-2.5 py-0.5 text-[11px] font-mono-num text-slate-300 flex items-center gap-2 hover:border-slate-500 transition">
+            <span><i class="fa-solid fa-ruble-sign accent-text mr-0.5"></i><span id="headerRub">0</span> ₽</span>
+            <span class="text-slate-600">|</span>
+            <span><i class="fa-solid fa-clock text-amber-400 mr-1"></i>Стоянка: <span id="headerIdle">00:00</span></span>
+        </button>
+    </div>
+
+    <!-- Основная сетка виджетов на весь 9-дюймовый экран -->
+    <main id="widgetsGrid" class="w-full h-full pt-8 grid gap-3 sm:gap-4 flex-grow"></main>
+
+    <!-- ==================== ОТДЕЛЬНОЕ ОКНО: СЧЁТЧИК ТОПЛИВА, РУБЛЕЙ, ВРЕМЕНИ СТОЯНКИ И ГРАФИКИ ==================== -->
+    <div id="statsModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-2.5 sm:p-4">
+        <div class="bg-[#0e1525] border border-slate-700/80 rounded-3xl w-full max-w-5xl h-[94vh] flex flex-col shadow-2xl overflow-hidden">
+            
+            <!-- Шапка окна счётчика -->
+            <div class="px-5 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-900/60">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center accent-text">
+                        <i class="fa-solid fa-calculator text-sm"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-sm sm:text-base font-bold text-white leading-tight">Счётчик поездок, топлива и расходов</h2>
+                        <p class="text-[11px] text-slate-400">Статистика по календарю, время стоянки и перерасчёт в рубли</p>
+                    </div>
+                </div>
+
+                <!-- Быстрая корректировка цены топлива и сброс -->
+                <div class="flex items-center gap-2">
+                    <div class="flex items-center bg-slate-800/90 border border-slate-700 rounded-xl px-2.5 py-1">
+                        <span class="text-[11px] text-slate-400 mr-1.5">Цена 1л:</span>
+                        <button id="priceMinusBtn" class="w-6 h-6 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs flex items-center justify-center">-</button>
+                        <input id="fuelPriceInput" type="number" step="0.5" min="1" max="500" class="w-16 bg-transparent text-center font-mono-num font-bold text-xs sm:text-sm text-white focus:outline-none" value="58.5">
+                        <button id="pricePlusBtn" class="w-6 h-6 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs flex items-center justify-center">+</button>
+                        <span class="text-xs accent-text font-bold ml-1">₽</span>
+                    </div>
+
+                    <button id="openResetConfirmBtn" class="bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-trash-can"></i>
+                        <span>Сброс</span>
+                    </button>
+
+                    <button id="closeStatsBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center ml-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Основной контент счётчика -->
+            <div class="p-4 overflow-y-auto flex-grow flex flex-col justify-between gap-3.5">
+
+                <!-- Верхний ряд: 4 крупные карточки общих накопительных счётчиков -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <!-- 1. Потрачено топлива -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold uppercase">
+                            <span>Потрачено топлива</span>
+                            <i class="fa-solid fa-gas-pump accent-text"></i>
+                        </div>
+                        <div class="my-1.5 flex items-baseline">
+                            <span id="statTotalFuel" class="text-2xl sm:text-3xl font-extrabold font-mono-num text-white">0.00</span>
+                            <span class="ml-1.5 text-xs text-slate-400 font-semibold">л</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 flex justify-between">
+                            <span>Ср. расход:</span>
+                            <span id="statAvgConsumption" class="text-slate-300 font-mono-num">0.0 л/100км</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. Пройдено километров -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold uppercase">
+                            <span>Пробег по счётчику</span>
+                            <i class="fa-solid fa-road text-cyan-400"></i>
+                        </div>
+                        <div class="my-1.5 flex items-baseline">
+                            <span id="statTotalKm" class="text-2xl sm:text-3xl font-extrabold font-mono-num text-white">0.00</span>
+                            <span class="ml-1.5 text-xs text-slate-400 font-semibold">км</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 flex justify-between">
+                            <span>За выбранный период:</span>
+                            <span id="statPeriodKm" class="text-cyan-400 font-mono-num">0.0 км</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. Стоимость в рублях -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold uppercase">
+                            <span>Стоимость топлива</span>
+                            <i class="fa-solid fa-ruble-sign text-emerald-400"></i>
+                        </div>
+                        <div class="my-1.5 flex items-baseline">
+                            <span id="statTotalRub" class="text-2xl sm:text-3xl font-extrabold font-mono-num text-emerald-400">0</span>
+                            <span class="ml-1.5 text-xs text-slate-400 font-semibold">₽</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 flex justify-between">
+                            <span>Цена 1 км:</span>
+                            <span id="statRubPerKm" class="text-slate-300 font-mono-num">0.0 ₽/км</span>
+                        </div>
+                    </div>
+
+                    <!-- 4. Время стоянки (Холостой ход / пробки) -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <div class="flex items-center justify-between text-slate-400 text-[11px] font-bold uppercase">
+                            <span>Время стоянки</span>
+                            <i class="fa-solid fa-clock text-amber-400"></i>
+                        </div>
+                        <div class="my-1.5 flex items-baseline">
+                            <span id="statIdleTime" class="text-2xl sm:text-3xl font-extrabold font-mono-num text-amber-400">00:00:00</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 flex justify-between">
+                            <span>Сожжено на стоянке:</span>
+                            <span id="statIdleFuel" class="text-amber-300 font-mono-num">0.00 л</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Панель управления графиком: День / Неделя / Месяц / Год + Календарь дат -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 flex flex-col flex-grow justify-between min-h-[230px]">
+                    
+                    <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+                        <!-- Переключатель режима графика -->
+                        <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+                            <button data-period="day" class="period-tab tab-active px-3 py-1 rounded-lg text-xs transition">День</button>
+                            <button data-period="week" class="period-tab px-3 py-1 rounded-lg text-xs text-slate-300 hover:text-white transition">Неделя</button>
+                            <button data-period="month" class="period-tab px-3 py-1 rounded-lg text-xs text-slate-300 hover:text-white transition">Месяц</button>
+                            <button data-period="year" class="period-tab px-3 py-1 rounded-lg text-xs text-slate-300 hover:text-white transition">Год</button>
+                        </div>
+
+                        <!-- Выбор метрики для графика -->
+                        <div class="flex items-center gap-1.5 bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
+                            <button data-metric="rub" class="metric-tab tab-active px-2.5 py-1 rounded-lg transition">Рубли (₽)</button>
+                            <button data-metric="fuel" class="metric-tab px-2.5 py-1 rounded-lg text-slate-300 transition">Топливо (л)</button>
+                            <button data-metric="km" class="metric-tab px-2.5 py-1 rounded-lg text-slate-300 transition">Пробег (км)</button>
+                        </div>
+
+                        <!-- Календарь выбора дат -->
+                        <div class="flex items-center gap-1.5 text-xs">
+                            <i class="fa-regular fa-calendar accent-text"></i>
+                            <input type="date" id="calendarStart" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono-num text-xs focus:outline-none">
+                            <span id="calendarDash" class="text-slate-500 hidden">—</span>
+                            <input type="date" id="calendarEnd" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono-num text-xs focus:outline-none hidden">
+                        </div>
+                    </div>
+
+                    <!-- Область интерактивного графика (Canvas) -->
+                    <div class="relative w-full flex-grow my-2 flex items-center justify-center min-h-[150px]">
+                        <canvas id="tripChartCanvas" class="w-full h-full"></canvas>
+                    </div>
+
+                    <!-- Итоги выбранного периода под графиком -->
+                    <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/80 gap-2">
+                        <div id="chartPeriodSummary" class="font-semibold text-slate-300">
+                            За выбранный период: 0.00 л • 0.0 км • 0 ₽ • Стоянка: 0 мин
+                        </div>
+                        <div class="text-slate-500">
+                            Данные сохраняются автоматически в память устройства по датам календаря
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО: ПОДТВЕРЖДЕНИЕ СБРОСА СЧЁТЧИКА -->
+    <div id="resetConfirmModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-[60] hidden flex items-center justify-center p-4">
+        <div class="bg-[#151e31] border border-rose-500/50 rounded-3xl max-w-md w-full p-6 shadow-2xl text-center">
+            <div class="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto mb-3 text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Подтверждение сброса счётчика</h3>
+            <p class="text-xs text-slate-300 leading-relaxed mb-5">
+                Что именно вы хотите обнулить? Вы можете сбросить только текущую поездку (стоянку, литры, рубли и километры) или очистить также всю историю календаря.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-2.5">
+                <button id="cancelResetBtn" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2.5 px-4 rounded-xl text-xs border border-slate-700">
+                    Отмена
+                </button>
+                <button id="confirmResetTripOnlyBtn" class="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 px-4 rounded-xl text-xs">
+                    Сбросить поездку
+                </button>
+                <button id="confirmResetAllBtn" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs">
+                    Сбросить всё
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО: НАСТРОЙКИ (ШЕСТЕРЁНКА) -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-3">
+        <div class="bg-[#111827] border border-slate-700/80 rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-sliders accent-text text-lg"></i>
+                    <h2 class="text-base font-bold tracking-wide text-white">Настройки бортового компьютера</h2>
+                </div>
+                <button id="closeSettingsBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-5 text-xs sm:text-sm">
+
+                <!-- 1. Профиль автомобиля -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                        <i class="fa-solid fa-car mr-1.5 accent-text"></i>Профиль автомобиля (Точный расчёт расхода и шины)
+                    </label>
+                    <select id="carProfileSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white font-semibold focus:outline-none">
+                        <option value="outlander">Mitsubishi Outlander (2011 – 2022) — 2.0L / 2.4L</option>
+                        <option value="fusion">Ford Fusion (2002 – 2012) — 1.4L / 1.6L Duratec</option>
+                    </select>
+                    <p id="profileDesc" class="mt-2 text-[11px] text-slate-400 leading-relaxed">
+                        Используется формула расчёта по МАП/МАФ для двигателей 4J11/4B11 (объём 2.0L) и протокол ISO 15765-4 CAN (11 bit, 500 kbps).
+                    </p>
+                </div>
+
+                <!-- 2. Выбор отображаемых датчиков (Окна на выбор) -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="text-xs font-bold uppercase tracking-wider text-slate-400">
+                            <i class="fa-solid fa-grip mr-1.5 accent-text"></i>Окна датчиков на главном экране
+                        </label>
+                        <span class="text-[11px] text-slate-400">Кликните по карточке Счётчика на экране для открытия графиков</span>
+                    </div>
+                    <div id="widgetToggles" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5"></div>
+                </div>
+
+                <!-- 3. Цветовая тема (Сеты) -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                        <i class="fa-solid fa-palette mr-1.5 accent-text"></i>Цветовое оформление (Сеты)
+                    </label>
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                        <button data-set-theme="emerald" class="theme-btn flex items-center gap-2 p-2.5 rounded-xl border border-slate-700 bg-slate-800/70 hover:bg-slate-800">
+                            <span class="w-4 h-4 rounded-full bg-emerald-500"></span>
+                            <span class="text-xs font-semibold">Изумруд</span>
+                        </button>
+                        <button data-set-theme="cyber" class="theme-btn flex items-center gap-2 p-2.5 rounded-xl border border-slate-700 bg-slate-800/70 hover:bg-slate-800">
+                            <span class="w-4 h-4 rounded-full bg-cyan-400"></span>
+                            <span class="text-xs font-semibold">Кибер-синий</span>
+                        </button>
+                        <button data-set-theme="sport" class="theme-btn flex items-center gap-2 p-2.5 rounded-xl border border-slate-700 bg-slate-800/70 hover:bg-slate-800">
+                            <span class="w-4 h-4 rounded-full bg-red-500"></span>
+                            <span class="text-xs font-semibold">Спорт-красный</span>
+                        </button>
+                        <button data-set-theme="amber" class="theme-btn flex items-center gap-2 p-2.5 rounded-xl border border-slate-700 bg-slate-800/70 hover:bg-slate-800">
+                            <span class="w-4 h-4 rounded-full bg-amber-500"></span>
+                            <span class="text-xs font-semibold">Янтарь (Ford)</span>
+                        </button>
+                        <button data-set-theme="violet" class="theme-btn flex items-center gap-2 p-2.5 rounded-xl border border-slate-700 bg-slate-800/70 hover:bg-slate-800">
+                            <span class="w-4 h-4 rounded-full bg-purple-500"></span>
+                            <span class="text-xs font-semibold">Неон</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4. Подключение, Автозапуск и Частота опроса -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                            Частота авто-опроса ЭБУ
+                        </label>
+                        <select id="pollIntervalSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs">
+                            <option value="600">Быстро (0.6 сек)</option>
+                            <option value="1000" selected>Оптимально (1.0 сек)</option>
+                            <option value="1600">Стабильно (1.6 сек)</option>
+                        </select>
+                        <label class="flex items-center gap-2 mt-3 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="autoConnectToggle" checked class="rounded accent-emerald-500 w-4 h-4">
+                            <span>Автоподключение к сохранённому ELM327 при входе</span>
+                        </label>
+                    </div>
+
+                    <div class="flex flex-col justify-between gap-2">
+                        <div class="text-xs text-slate-400">Управление связью и тестом:</div>
+                        <div class="flex flex-wrap gap-2">
+                            <button id="modalConnectBtn" class="flex-1 accent-bg text-black font-bold py-2.5 px-3 rounded-xl text-xs">
+                                <i class="fa-brands fa-bluetooth-b mr-1"></i>Выбрать адаптер
+                            </button>
+                            <button id="simToggleBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold py-2.5 px-3 rounded-xl text-xs">
+                                <i class="fa-solid fa-flask mr-1"></i>Симуляция
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО: ТЕРМИНАЛ ELM327 -->
+    <div id="terminalModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-3">
+        <div class="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-2xl h-[82vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-terminal accent-text"></i>
+                    <h3 class="text-sm font-bold text-white">Консоль команд ELM327</h3>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="clearLogBtn" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded-lg border border-slate-700">Очистить</button>
+                    <button id="closeTerminalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="px-4 py-2.5 bg-slate-900/70 border-b border-slate-800 flex flex-wrap gap-1.5">
+                <button class="quick-cmd bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono px-2.5 py-1 rounded-lg border border-slate-700" data-cmd="ATZ\r">ATZ</button>
+                <button class="quick-cmd bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono px-2.5 py-1 rounded-lg border border-slate-700" data-cmd="ATI\r">ATI</button>
+                <button class="quick-cmd bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono px-2.5 py-1 rounded-lg border border-slate-700" data-cmd="ATRV\r">ATRV (Вольтаж)</button>
+                <button class="quick-cmd bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono px-2.5 py-1 rounded-lg border border-slate-700" data-cmd="010C\r">010C (RPM)</button>
+                <button class="quick-cmd bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono px-2.5 py-1 rounded-lg border border-slate-700" data-cmd="010D\r">010D (Скорость)</button>
+                <button class="quick-cmd bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono px-2.5 py-1 rounded-lg border border-slate-700" data-cmd="0105\r">0105 (Темп. ОЖ)</button>
+                <button class="quick-cmd bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono px-2.5 py-1 rounded-lg border border-slate-700" data-cmd="03\r">03 (Ошибки DTC)</button>
+            </div>
+
+            <div id="terminalOutput" class="p-4 font-mono-num text-xs overflow-y-auto flex-grow space-y-1 select-text bg-[#070b12]">
+                <div class="text-slate-500">// Готов к работе. Опрос и инициализация выполняются автоматически при подключении.</div>
+            </div>
+
+            <form id="cmdForm" class="p-3 bg-slate-900 border-t border-slate-800 flex gap-2">
+                <input type="text" id="cmdInput" placeholder="Команда (например 010C или ATRV)..." class="flex-grow bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-mono-num text-white focus:outline-none">
+                <button type="submit" class="accent-bg text-black font-bold px-4 py-2 rounded-xl text-xs">
+                    Отправить
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ==================== ПРОФИЛИ АВТОМОБИЛЕЙ ====================
+        const CAR_PROFILES = {
+            outlander: {
+                name: 'Mitsubishi Outlander (2011–2022)',
+                displacementL: 2.0,
+                volumetricEff: 0.82,
+                initProtocol: 'ATSP6',
+                idleLitersPerHour: 0.78,
+                desc: 'Используется профиль для двигателей 2.0L (4J11) / 2.4L (4B12): протокол CAN 500 kbps (ATSP6) и расчёт впрыска по датчикам MAF/MAP + обороты.'
+            },
+            fusion: {
+                name: 'Ford Fusion (2002–2012)',
+                displacementL: 1.4,
+                volumetricEff: 0.80,
+                initProtocol: 'ATSP0',
+                idleLitersPerHour: 0.62,
+                desc: 'Используется профиль для двигателя 1.4L Duratec: расчёт расхода топлива через абсолютное давление во впускном коллекторе (MAP 010B) и температуру впуска (IAT 010F).'
+            }
+        };
+
+        // ==================== КОНФИГУРАЦИЯ ДОСТУПНЫХ ОКОН (ДАТЧИКОВ) ====================
+        const WIDGET_DEFS = [
+            { id: 'speed',    title: 'Скорость',          unit: 'км/ч',   icon: 'fa-gauge-high',               defaultOn: true },
+            { id: 'rpm',      title: 'Обороты ДВС',       unit: 'об/мин', icon: 'fa-rotate',                   defaultOn: true },
+            { id: 'temp',     title: 'Температура ОЖ',    unit: '°C',     icon: 'fa-temperature-three-quarters', defaultOn: true },
+            { id: 'voltage',  title: 'Напряжение сети',   unit: 'В',      icon: 'fa-car-battery',              defaultOn: true },
+            { id: 'instFuel', title: 'Текущий расход',    unit: 'л/100км',icon: 'fa-gas-pump',                 defaultOn: true },
+            { id: 'avgFuel',  title: 'Средний расход',    unit: 'л/100км',icon: 'fa-chart-line',               defaultOn: true },
+            { id: 'tripCost', title: 'Счётчик и рубли',   unit: '₽',      icon: 'fa-ruble-sign',               defaultOn: false },
+            { id: 'idleTime', title: 'Время стоянки',     unit: 'ч:м:с',  icon: 'fa-clock',                    defaultOn: false }
+        ];
+
+        // ==================== СОХРАНЕННЫЕ НАСТРОЙКИ И ИСТОРИЯ ПО КАЛЕНДАРЮ ====================
+        let appConfig = {
+            theme: localStorage.getItem('obd_theme') || 'emerald',
+            profile: localStorage.getItem('obd_profile') || 'outlander',
+            pollMs: parseInt(localStorage.getItem('obd_poll_ms') || '1000', 10),
+            autoConnect: localStorage.getItem('obd_autoconnect') !== 'false',
+            fuelPrice: parseFloat(localStorage.getItem('obd_fuel_price') || '58.5'),
+            activeWidgets: JSON.parse(localStorage.getItem('obd_widgets') || 'null') || ['speed', 'rpm', 'temp', 'voltage', 'instFuel', 'avgFuel']
+        };
+
+        // История по дням и часам: { "YYYY-MM-DD": { fuelL: 0, distKm: 0, idleSec: 0, hours: [24 числа литров] } }
+        let calendarHistory = JSON.parse(localStorage.getItem('obd_calendar_history') || '{}');
+
+        function getTodayDateStr(dateObj = new Date()) {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function ensureDayRecord(dateStr) {
+            if (!calendarHistory[dateStr]) {
+                calendarHistory[dateStr] = {
+                    fuelL: 0,
+                    distKm: 0,
+                    idleSec: 0,
+                    hoursFuel: new Array(24).fill(0),
+                    hoursKm: new Array(24).fill(0)
+                };
+            } else if (!calendarHistory[dateStr].hoursFuel) {
+                calendarHistory[dateStr].hoursFuel = new Array(24).fill(0);
+                calendarHistory[dateStr].hoursKm = new Array(24).fill(0);
+            }
+            return calendarHistory[dateStr];
+        }
+
+        // Накопительные показатели счётчика
+        const telemetry = {
+            speed: 0,
+            rpm: 0,
+            temp: null,
+            voltage: 12.6,
+            maf: null,
+            map: null,
+            iat: 25,
+            load: 20,
+            instFuelVal: 0.0,
+            instFuelUnit: 'л/ч',
+            avgFuel: parseFloat(localStorage.getItem('obd_avg_fuel') || '8.4'),
+            totalDistKm: parseFloat(localStorage.getItem('obd_trip_km') || '0.0'),
+            totalFuelL: parseFloat(localStorage.getItem('obd_trip_liters') || '0.0'),
+            idleSeconds: parseFloat(localStorage.getItem('obd_idle_sec') || '0'),
+            idleFuelL: parseFloat(localStorage.getItem('obd_idle_fuel') || '0.0'),
+            lastTickTime: Date.now()
+        };
+
+        function formatHMS(totalSeconds) {
+            const sec = Math.max(0, Math.floor(totalSeconds));
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const s = sec % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function formatShortHM(totalSeconds) {
+            const sec = Math.max(0, Math.floor(totalSeconds));
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            if (h > 0) return `${h}ч ${String(m).padStart(2, '0')}м`;
+            return `${String(m).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+        }
+
+        // ==================== ИНИЦИАЛИЗАЦИЯ ИНТЕРФЕЙСА ====================
+        const widgetsGrid = document.getElementById('widgetsGrid');
+        const widgetToggles = document.getElementById('widgetToggles');
+        const activeProfileBadge = document.getElementById('activeProfileBadge');
+        const carProfileSelect = document.getElementById('carProfileSelect');
+        const profileDesc = document.getElementById('profileDesc');
+        const pollIntervalSelect = document.getElementById('pollIntervalSelect');
+        const autoConnectToggle = document.getElementById('autoConnectToggle');
+        const fuelPriceInput = document.getElementById('fuelPriceInput');
+
+        function saveConfig() {
+            localStorage.setItem('obd_theme', appConfig.theme);
+            localStorage.setItem('obd_profile', appConfig.profile);
+            localStorage.setItem('obd_poll_ms', String(appConfig.pollMs));
+            localStorage.setItem('obd_autoconnect', String(appConfig.autoConnect));
+            localStorage.setItem('obd_fuel_price', String(appConfig.fuelPrice));
+            localStorage.setItem('obd_widgets', JSON.stringify(appConfig.activeWidgets));
+        }
+
+        function saveTelemetryAndHistory() {
+            localStorage.setItem('obd_avg_fuel', telemetry.avgFuel.toFixed(1));
+            localStorage.setItem('obd_trip_km', telemetry.totalDistKm.toFixed(4));
+            localStorage.setItem('obd_trip_liters', telemetry.totalFuelL.toFixed(5));
+            localStorage.setItem('obd_idle_sec', String(Math.floor(telemetry.idleSeconds)));
+            localStorage.setItem('obd_idle_fuel', telemetry.idleFuelL.toFixed(5));
+            localStorage.setItem('obd_calendar_history', JSON.stringify(calendarHistory));
+        }
+
+        function applyTheme(themeName) {
+            appConfig.theme = themeName;
+            document.body.setAttribute('data-theme', themeName);
+            document.querySelectorAll('.theme-btn').forEach(btn => {
+                if (btn.getAttribute('data-set-theme') === themeName) {
+                    btn.classList.add('ring-2', 'ring-white');
+                } else {
+                    btn.classList.remove('ring-2', 'ring-white');
+                }
+            });
+            saveConfig();
+            drawTripChart();
+        }
+
+        function applyProfile(profileKey) {
+            if (!CAR_PROFILES[profileKey]) profileKey = 'outlander';
+            appConfig.profile = profileKey;
+            const prof = CAR_PROFILES[profileKey];
+            activeProfileBadge.textContent = prof.name;
+            carProfileSelect.value = profileKey;
+            profileDesc.textContent = prof.desc;
+            saveConfig();
+        }
+
+        function renderDashboardGrid() {
+            widgetsGrid.innerHTML = '';
+            const enabledList = WIDGET_DEFS.filter(w => appConfig.activeWidgets.includes(w.id));
+            const count = enabledList.length;
+
+            let gridClass = 'grid-cols-2 lg:grid-cols-3 grid-rows-2';
+            if (count === 1) gridClass = 'grid-cols-1 grid-rows-1';
+            else if (count === 2) gridClass = 'grid-cols-2 grid-rows-1';
+            else if (count === 3) gridClass = 'grid-cols-3 grid-rows-1';
+            else if (count === 4) gridClass = 'grid-cols-2 grid-rows-2';
+            else if (count <= 6) gridClass = 'grid-cols-3 grid-rows-2';
+            else gridClass = 'grid-cols-4 grid-rows-2';
+
+            widgetsGrid.className = `w-full h-full pt-8 grid gap-3 sm:gap-4 flex-grow ${gridClass}`;
+
+            enabledList.forEach(w => {
+                const isBig = count <= 3;
+                const valFontSize = isBig ? 'text-5xl sm:text-7xl' : (count <= 6 ? 'text-4xl sm:text-5xl lg:text-6xl' : 'text-3xl sm:text-4xl');
+                const card = document.createElement('div');
+                card.className = 'hud-card';
+                if (w.id === 'tripCost' || w.id === 'idleTime' || w.id === 'avgFuel') {
+                    card.classList.add('cursor-pointer', 'hover:border-slate-500');
+                    card.title = 'Нажмите, чтобы открыть подробный счётчик и графики';
+                    card.addEventListener('click', () => openStatsModal());
+                }
+                card.innerHTML = `
+                    <div class="flex items-center justify-between z-10">
+                        <span class="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-400">${w.title}</span>
+                        <div class="w-8 h-8 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center accent-text">
+                            <i class="fa-solid ${w.icon} text-sm"></i>
+                        </div>
+                    </div>
+                    <div class="my-auto py-1 flex items-baseline justify-center z-10">
+                        <span id="val_${w.id}" class="${valFontSize} font-extrabold font-mono-num tracking-tight text-white">--</span>
+                        <span id="unit_${w.id}" class="ml-2 text-xs sm:text-base font-semibold text-slate-400">${w.unit}</span>
+                    </div>
+                    <div class="w-full z-10">
+                        <div class="flex justify-between text-[11px] text-slate-400 mb-1.5">
+                            <span id="sub_${w.id}">Готов</span>
+                            <span id="extra_${w.id}" class="font-mono-num"></span>
+                        </div>
+                        <div class="w-full bg-slate-800/90 rounded-full h-2 overflow-hidden">
+                            <div id="bar_${w.id}" class="bar-fill h-2 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                `;
+                widgetsGrid.appendChild(card);
+            });
+
+            updateDashboardUI();
+        }
+
+        function renderWidgetCheckboxes() {
+            widgetToggles.innerHTML = '';
+            WIDGET_DEFS.forEach(w => {
+                const checked = appConfig.activeWidgets.includes(w.id);
+                const lbl = document.createElement('label');
+                lbl.className = `flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
+                    checked ? 'bg-slate-800 border-emerald-500/60 text-white' : 'bg-slate-900/50 border-slate-800 text-slate-400'
+                }`;
+                lbl.innerHTML = `
+                    <input type="checkbox" value="${w.id}" ${checked ? 'checked' : ''} class="w-4 h-4 rounded accent-emerald-500">
+                    <i class="fa-solid ${w.icon} text-xs accent-text"></i>
+                    <span class="text-xs font-semibold truncate">${w.title}</span>
+                `;
+                const input = lbl.querySelector('input');
+                input.addEventListener('change', () => {
+                    if (input.checked) {
+                        if (!appConfig.activeWidgets.includes(w.id)) appConfig.activeWidgets.push(w.id);
+                    } else {
+                        if (appConfig.activeWidgets.length <= 1) {
+                            input.checked = true;
+                            return;
+                        }
+                        appConfig.activeWidgets = appConfig.activeWidgets.filter(id => id !== w.id);
+                    }
+                    saveConfig();
+                    renderWidgetCheckboxes();
+                    renderDashboardGrid();
+                });
+                widgetToggles.appendChild(lbl);
+            });
+        }
+
+        // ==================== РАСЧЕТ РАСХОДА, СТОИМОСТИ, СТОЯНКИ И ЗАПИСЬ В КАЛЕНДАРЬ ====================
+        let lastSaveCounter = 0;
+
+        function recalculateFuelMetrics() {
+            const now = Date.now();
+            const dtSec = Math.max(0.01, (now - telemetry.lastTickTime) / 1000);
+            const dtHours = dtSec / 3600;
+            telemetry.lastTickTime = now;
+
+            const prof = CAR_PROFILES[appConfig.profile] || CAR_PROFILES.outlander;
+            let litersPerHour = 0;
+
+            if (telemetry.rpm > 350) {
+                if (telemetry.maf !== null && telemetry.maf > 0.2) {
+                    litersPerHour = (telemetry.maf * 3600) / (14.7 * 750);
+                } else if (telemetry.map !== null && telemetry.map > 15) {
+                    const iatK = (telemetry.iat || 25) + 273.15;
+                    const imap = (telemetry.rpm * telemetry.map) / iatK / 2;
+                    const estMaf = (imap / 60) * prof.volumetricEff * prof.displacementL * (28.97 / 8.314);
+                    litersPerHour = (estMaf * 3600) / (14.7 * 750);
+                } else {
+                    const loadFactor = Math.max(0.18, (telemetry.load || 25) / 100);
+                    litersPerHour = prof.idleLitersPerHour * (telemetry.rpm / 750) * (0.65 + loadFactor * 1.35);
+                }
+                litersPerHour = Math.max(0.45, Math.min(35.0, litersPerHour));
+            } else {
+                litersPerHour = 0;
+            }
+
+            // Накопление пробега, литров, времени стоянки и почасовой статистики календаря
+            if ((isConnected || isSimulation) && dtSec < 15) {
+                const dLiters = litersPerHour * dtHours;
+                const dKm = (telemetry.rpm > 350 ? telemetry.speed : 0) * dtHours;
+
+                // Стоянка: считаем когда мы подключены и скорость < 3 км/ч
+                const isIdlingOrParked = telemetry.speed < 3;
+                if (isIdlingOrParked) {
+                    telemetry.idleSeconds += dtSec;
+                    telemetry.idleFuelL += dLiters;
+                }
+
+                if (telemetry.rpm > 350) {
+                    telemetry.totalDistKm += dKm;
+                    telemetry.totalFuelL += dLiters;
+
+                    if (telemetry.totalDistKm >= 0.05) {
+                        telemetry.avgFuel = Math.min(29.9, Math.max(3.5, (telemetry.totalFuelL / telemetry.totalDistKm) * 100));
+                    }
+                }
+
+                // Запись в календарь за текущий день и час
+                const nowDate = new Date();
+                const dayKey = getTodayDateStr(nowDate);
+                const hourIdx = nowDate.getHours();
+                const dayRec = ensureDayRecord(dayKey);
+
+                dayRec.fuelL += dLiters;
+                dayRec.distKm += dKm;
+                if (isIdlingOrParked) dayRec.idleSec += dtSec;
+                dayRec.hoursFuel[hourIdx] = (dayRec.hoursFuel[hourIdx] || 0) + dLiters;
+                dayRec.hoursKm[hourIdx] = (dayRec.hoursKm[hourIdx] || 0) + dKm;
+
+                lastSaveCounter++;
+                if (lastSaveCounter % 4 === 0) {
+                    saveTelemetryAndHistory();
+                }
+            }
+
+            if (telemetry.speed < 5) {
+                telemetry.instFuelVal = litersPerHour;
+                telemetry.instFuelUnit = 'л/ч';
+            } else {
+                telemetry.instFuelVal = Math.min(39.9, (litersPerHour / telemetry.speed) * 100);
+                telemetry.instFuelUnit = 'л/100км';
+            }
+        }
+
+        function setCardDOM(id, valueStr, unitStr, subText, extraText, pct) {
+            const valEl = document.getElementById(`val_${id}`);
+            const unitEl = document.getElementById(`unit_${id}`);
+            const subEl = document.getElementById(`sub_${id}`);
+            const extraEl = document.getElementById(`extra_${id}`);
+            const barEl = document.getElementById(`bar_${id}`);
+            if (!valEl) return;
+
+            valEl.textContent = valueStr;
+            if (unitStr !== null) unitEl.textContent = unitStr;
+            if (subText !== null) subEl.textContent = subText;
+            if (extraText !== null) extraEl.textContent = extraText;
+            if (barEl && pct !== null) {
+                barEl.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+            }
+        }
+
+        function updateDashboardUI() {
+            recalculateFuelMetrics();
+
+            const totalRub = telemetry.totalFuelL * appConfig.fuelPrice;
+
+            // Обновляем верхний мини-бейдж
+            document.getElementById('headerRub').textContent = Math.round(totalRub);
+            document.getElementById('headerIdle').textContent = formatShortHM(telemetry.idleSeconds);
+
+            // 1. Скорость
+            setCardDOM(
+                'speed',
+                Math.round(telemetry.speed),
+                'км/ч',
+                telemetry.speed > 0 ? 'В движении' : 'Стоянка',
+                `Макс: 200`,
+                (telemetry.speed / 200) * 100
+            );
+
+            // 2. Обороты
+            setCardDOM(
+                'rpm',
+                Math.round(telemetry.rpm),
+                'об/мин',
+                telemetry.rpm > 350 ? 'ДВС запущен' : 'ДВС остановлен',
+                telemetry.load ? `Нагрузка: ${Math.round(telemetry.load)}%` : '',
+                (telemetry.rpm / 7000) * 100
+            );
+
+            // 3. Температура ОЖ
+            const t = telemetry.temp;
+            let tStatus = 'Ожидание';
+            if (t !== null) {
+                if (t < 70) tStatus = 'Прогрев';
+                else if (t <= 102) tStatus = 'Норма (80–95°C)';
+                else tStatus = 'ПЕРЕГРЕВ!';
+            }
+            setCardDOM(
+                'temp',
+                t !== null ? Math.round(t) : '--',
+                '°C',
+                tStatus,
+                t !== null ? 'ЭБУ 0105' : '',
+                t !== null ? ((t + 20) / 140) * 100 : 0
+            );
+
+            // 4. Напряжение
+            const v = telemetry.voltage;
+            let vStatus = 'Норма генератора';
+            if (v < 12.1) vStatus = 'Разряд АКБ';
+            else if (v < 13.2) vStatus = 'Зажигание (ДВС выкл)';
+            setCardDOM(
+                'voltage',
+                v ? v.toFixed(1) : '--',
+                'В',
+                vStatus,
+                'ATRV',
+                ((v - 10) / 5.5) * 100
+            );
+
+            // 5. Текущий расход топлива
+            setCardDOM(
+                'instFuel',
+                telemetry.instFuelVal.toFixed(1),
+                telemetry.instFuelUnit,
+                telemetry.speed < 5 ? 'Холостой ход' : 'Мгновенный в движении',
+                `${(telemetry.instFuelVal * appConfig.fuelPrice).toFixed(0)} ₽`,
+                (telemetry.instFuelVal / (telemetry.speed < 5 ? 3.5 : 20)) * 100
+            );
+
+            // 6. Средний расход топлива
+            setCardDOM(
+                'avgFuel',
+                telemetry.avgFuel.toFixed(1),
+                'л/100км',
+                `Пробег: ${telemetry.totalDistKm.toFixed(1)} км`,
+                `${telemetry.totalFuelL.toFixed(2)} л (${Math.round(totalRub)} ₽)`,
+                (telemetry.avgFuel / 16) * 100
+            );
+
+            // 7. Карточка Счётчика и Рублей (если включена на главном экране)
+            setCardDOM(
+                'tripCost',
+                Math.round(totalRub),
+                '₽',
+                `Топливо: ${telemetry.totalFuelL.toFixed(2)} л`,
+                `${telemetry.totalDistKm.toFixed(1)} км`,
+                Math.min(100, (totalRub / 2000) * 100)
+            );
+
+            // 8. Карточка Времени стоянки (если включена на главном экране)
+            setCardDOM(
+                'idleTime',
+                formatShortHM(telemetry.idleSeconds),
+                '',
+                `На холостых: ${telemetry.idleFuelL.toFixed(2)} л`,
+                `${Math.round(telemetry.idleFuelL * appConfig.fuelPrice)} ₽`,
+                Math.min(100, (telemetry.idleSeconds / 3600) * 100)
+            );
+
+            // Если открыто модальное окно счётчика — обновляем его живые цифры
+            if (!document.getElementById('statsModal').classList.contains('hidden')) {
+                updateStatsModalNumbers();
+            }
+        }
+
+        // ==================== ЛОГИКА ОКНА СЧЁТЧИКА, КАЛЕНДАРЯ И ГРАФИКА ====================
+        let currentChartPeriod = 'day'; // 'day' | 'week' | 'month' | 'year'
+        let currentChartMetric = 'rub'; // 'rub' | 'fuel' | 'km'
+
+        const calendarStartInput = document.getElementById('calendarStart');
+        const calendarEndInput = document.getElementById('calendarEnd');
+        const calendarDash = document.getElementById('calendarDash');
+
+        // Устанавливаем сегодняшнюю дату в календарь по умолчанию
+        const todayStr = getTodayDateStr();
+        calendarStartInput.value = todayStr;
+        calendarEndInput.value = todayStr;
+
+        function openStatsModal() {
+            document.getElementById('statsModal').classList.remove('hidden');
+            fuelPriceInput.value = appConfig.fuelPrice;
+            updateStatsModalNumbers();
+            setTimeout(drawTripChart, 50);
+        }
+
+        function updateStatsModalNumbers() {
+            const totalRub = telemetry.totalFuelL * appConfig.fuelPrice;
+            const avgCons = telemetry.totalDistKm >= 0.05 ? (telemetry.totalFuelL / telemetry.totalDistKm) * 100 : telemetry.avgFuel;
+            const rubPerKm = telemetry.totalDistKm >= 0.05 ? totalRub / telemetry.totalDistKm : 0;
+
+            document.getElementById('statTotalFuel').textContent = telemetry.totalFuelL.toFixed(2);
+            document.getElementById('statAvgConsumption').textContent = `${avgCons.toFixed(1)} л/100км`;
+            document.getElementById('statTotalKm').textContent = telemetry.totalDistKm.toFixed(2);
+            document.getElementById('statTotalRub').textContent = Math.round(totalRub).toLocaleString('ru-RU');
+            document.getElementById('statRubPerKm').textContent = `${rubPerKm.toFixed(1)} ₽/км`;
+            document.getElementById('statIdleTime').textContent = formatHMS(telemetry.idleSeconds);
+            document.getElementById('statIdleFuel').textContent = `${telemetry.idleFuelL.toFixed(2)} л (${Math.round(telemetry.idleFuelL * appConfig.fuelPrice)} ₽)`;
+        }
+
+        // Формирование выборок данных по выбранному периоду и датам календаря
+        function buildChartDataset() {
+            const baseDateStr = calendarStartInput.value || getTodayDateStr();
+            const baseDate = new Date(baseDateStr + 'T00:00:00');
+            const labels = [];
+            const values = [];
+            let sumFuel = 0;
+            let sumKm = 0;
+            let sumIdleSec = 0;
+
+            function extractMetric(fuelL, distKm) {
+                if (currentChartMetric === 'rub') return fuelL * appConfig.fuelPrice;
+                if (currentChartMetric === 'fuel') return fuelL;
+                return distKm;
+            }
+
+            if (currentChartPeriod === 'day') {
+                // Почасовой график за выбранный в календаре день (00:00 .. 23:00)
+                const rec = calendarHistory[baseDateStr] || { fuelL: 0, distKm: 0, idleSec: 0, hoursFuel: new Array(24).fill(0), hoursKm: new Array(24).fill(0) };
+                sumFuel = rec.fuelL || 0;
+                sumKm = rec.distKm || 0;
+                sumIdleSec = rec.idleSec || 0;
+                for (let h = 0; h < 24; h++) {
+                    labels.push(`${String(h).padStart(2, '0')}ч`);
+                    const f = (rec.hoursFuel && rec.hoursFuel[h]) ? rec.hoursFuel[h] : 0;
+                    const k = (rec.hoursKm && rec.hoursKm[h]) ? rec.hoursKm[h] : 0;
+                    values.push(extractMetric(f, k));
+                }
+            } else if (currentChartPeriod === 'week') {
+                // График за 7 дней (от выбранной начальной до конечной даты календаря)
+                const endDateStr = calendarEndInput.value || baseDateStr;
+                const endDate = new Date(endDateStr + 'T00:00:00');
+                const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+                // Если выбран диапазон в календаре — строим по диапазону (до 14 дней), иначе 7 дней до выбранной даты
+                let startD = new Date(baseDate);
+                let endD = new Date(endDate);
+                if (endD < startD) {
+                    const tmp = startD; startD = endD; endD = tmp;
+                }
+                const diffDays = Math.round((endD - startD) / 86400000);
+                if (diffDays === 0) {
+                    startD.setDate(startD.getDate() - 6);
+                }
+
+                for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+                    const dStr = getTodayDateStr(d);
+                    const rec = calendarHistory[dStr] || { fuelL: 0, distKm: 0, idleSec: 0 };
+                    sumFuel += rec.fuelL || 0;
+                    sumKm += rec.distKm || 0;
+                    sumIdleSec += rec.idleSec || 0;
+                    labels.push(`${dayNames[d.getDay()]} ${d.getDate()}`);
+                    values.push(extractMetric(rec.fuelL || 0, rec.distKm || 0));
+                }
+            } else if (currentChartPeriod === 'month') {
+                // По всем дням выбранного месяца
+                const year = baseDate.getFullYear();
+                const month = baseDate.getMonth();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const rec = calendarHistory[dStr] || { fuelL: 0, distKm: 0, idleSec: 0 };
+                    sumFuel += rec.fuelL || 0;
+                    sumKm += rec.distKm || 0;
+                    sumIdleSec += rec.idleSec || 0;
+                    labels.push(String(day));
+                    values.push(extractMetric(rec.fuelL || 0, rec.distKm || 0));
+                }
+            } else if (currentChartPeriod === 'year') {
+                // По 12 месяцам выбранного года
+                const year = baseDate.getFullYear();
+                const monthNames = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+                const mFuel = new Array(12).fill(0);
+                const mKm = new Array(12).fill(0);
+
+                Object.keys(calendarHistory).forEach(dateKey => {
+                    if (dateKey.startsWith(String(year) + '-')) {
+                        const mIdx = parseInt(dateKey.substring(5, 7), 10) - 1;
+                        if (mIdx >= 0 && mIdx < 12) {
+                            const r = calendarHistory[dateKey];
+                            mFuel[mIdx] += r.fuelL || 0;
+                            mKm[mIdx] += r.distKm || 0;
+                            sumFuel += r.fuelL || 0;
+                            sumKm += r.distKm || 0;
+                            sumIdleSec += r.idleSec || 0;
+                        }
+                    }
+                });
+
+                for (let m = 0; m < 12; m++) {
+                    labels.push(monthNames[m]);
+                    values.push(extractMetric(mFuel[m], mKm[m]));
+                }
+            }
+
+            const sumRub = Math.round(sumFuel * appConfig.fuelPrice);
+            document.getElementById('statPeriodKm').textContent = `${sumKm.toFixed(1)} км`;
+            document.getElementById('chartPeriodSummary').textContent =
+                `Итого за период: ${sumFuel.toFixed(2)} л • ${sumKm.toFixed(1)} км • ${sumRub.toLocaleString('ru-RU')} ₽ • Стоянка: ${Math.round(sumIdleSec / 60)} мин`;
+
+            return { labels, values };
+        }
+
+        function drawTripChart() {
+            const canvas = document.getElementById('tripChartCanvas');
+            if (!canvas || canvas.offsetParent === null) return;
+            const ctx = canvas.getContext('2d');
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.max(300, rect.width) * dpr;
+            canvas.height = Math.max(145, rect.height) * dpr;
+            ctx.scale(dpr, dpr);
+
+            const W = Math.max(300, rect.width);
+            const H = Math.max(145, rect.height);
+            ctx.clearRect(0, 0, W, H);
+
+            const { labels, values } = buildChartDataset();
+            const maxVal = Math.max(...values, currentChartMetric === 'rub' ? 100 : 2);
+            const padLeft = 42;
+            const padRight = 14;
+            const padTop = 18;
+            const padBottom = 26;
+            const plotW = W - padLeft - padRight;
+            const plotH = H - padTop - padBottom;
+
+            const accentColor = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#22c55e';
+
+            // Горизонтальные линии сетки
+            ctx.strokeStyle = 'rgba(51, 65, 85, 0.45)';
+            ctx.lineWidth = 1;
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px JetBrains Mono, monospace';
+            ctx.textAlign = 'right';
+
+            const gridSteps = 3;
+            for (let i = 0; i <= gridSteps; i++) {
+                const y = padTop + (plotH / gridSteps) * i;
+                const val = maxVal * (1 - i / gridSteps);
+                ctx.beginPath();
+                ctx.moveTo(padLeft, y);
+                ctx.lineTo(W - padRight, y);
+                ctx.stroke();
+
+                const labelStr = currentChartMetric === 'rub' ? Math.round(val) : val.toFixed(1);
+                ctx.fillText(labelStr, padLeft - 6, y + 3);
+            }
+
+            // Столбцы гистограммы
+            const count = labels.length;
+            const stepW = plotW / Math.max(1, count);
+            const barW = Math.max(4, Math.min(28, stepW * 0.62));
+
+            labels.forEach((lbl, idx) => {
+                const val = values[idx] || 0;
+                const barH = Math.max(2, (val / maxVal) * plotH);
+                const x = padLeft + idx * stepW + (stepW - barW) / 2;
+                const y = padTop + plotH - barH;
+
+                // Градиент столбца
+                const grad = ctx.createLinearGradient(0, y, 0, padTop + plotH);
+                grad.addColorStop(0, accentColor);
+                grad.addColorStop(1, 'rgba(15, 23, 42, 0.3)');
+                ctx.fillStyle = val > 0 ? grad : 'rgba(51, 65, 85, 0.3)';
+
+                ctx.beginPath();
+                ctx.roundRect(x, y, barW, barH, 4);
+                ctx.fill();
+
+                // Значение над столбцом, если оно больше 0
+                if (val > 0 && count <= 14) {
+                    ctx.fillStyle = '#e2e8f0';
+                    ctx.font = 'bold 9px JetBrains Mono, monospace';
+                    ctx.textAlign = 'center';
+                    const vText = currentChartMetric === 'rub' ? Math.round(val) : val.toFixed(1);
+                    ctx.fillText(vText, x + barW / 2, Math.max(10, y - 4));
+                }
+
+                // Подпись по оси X
+                const skip = count > 20 ? 2 : 1;
+                if (idx % skip === 0) {
+                    ctx.fillStyle = '#94a3b8';
+                    ctx.font = '10px Inter, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(lbl, x + barW / 2, H - 8);
+                }
+            });
+        }
+
+        // ==================== WEB BLUETOOTH & АВТО-ПОДКЛЮЧЕНИЕ ====================
+        let bluetoothDevice = null;
+        let rxCharacteristic = null;
+        let txCharacteristic = null;
+        let isConnected = false;
+        let isSimulation = false;
+        let pollingTimer = null;
+        let rxBuffer = "";
+        let pollStep = 0;
+
+        const KNOWN_OBD_SERVICES = [
+            "0000fff0-0000-1000-8000-00805f9b34fb",
+            "0000ffe0-0000-1000-8000-00805f9b34fb",
+            "000018f0-0000-1000-8000-00805f9b34fb",
+            "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
+            "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+            "0000ff00-0000-1000-8000-00805f9b34fb",
+            "0000bee0-0000-1000-8000-00805f9b34fb",
+            "00001101-0000-1000-8000-00805f9b34fb",
+            "00001800-0000-1000-8000-00805f9b34fb",
+            "00001801-0000-1000-8000-00805f9b34fb",
+            "0000180a-0000-1000-8000-00805f9b34fb"
+        ];
+
+        const statusDot = document.getElementById('statusDot');
+        const statusLabel = document.getElementById('statusLabel');
+        const terminalOutput = document.getElementById('terminalOutput');
+
+        function logToTerminal(text, type = 'normal') {
+            const div = document.createElement('div');
+            const time = new Date().toLocaleTimeString();
+            let colorClass = 'text-slate-300';
+            if (type === 'sent') colorClass = 'text-cyan-400 font-semibold';
+            if (type === 'received') colorClass = 'text-emerald-400 font-semibold';
+            if (type === 'error') colorClass = 'text-rose-400 font-semibold';
+            if (type === 'system') colorClass = 'text-amber-400 italic';
+
+            div.className = `${colorClass} leading-relaxed break-all`;
+            div.innerHTML = `<span class="text-slate-600 text-[10px] mr-1.5">[${time}]</span>${text}`;
+            terminalOutput.appendChild(div);
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+
+        function setConnectionStatus(state, labelText) {
+            statusLabel.textContent = labelText;
+            if (state === 'connected') {
+                statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+            } else if (state === 'sim') {
+                statusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+            } else if (state === 'connecting') {
+                statusDot.className = 'w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping';
+            } else {
+                statusDot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse';
+            }
+        }
+
+        async function connectToGattDevice(device) {
+            bluetoothDevice = device;
+            bluetoothDevice.removeEventListener('gattserverdisconnected', onDisconnected);
+            bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+            setConnectionStatus('connecting', 'Связь...');
+            logToTerminal(`Подключение к "${device.name || 'ELM327'}"...`, 'system');
+
+            const server = await device.gatt.connect();
+            const services = await server.getPrimaryServices();
+
+            rxCharacteristic = null;
+            txCharacteristic = null;
+
+            for (const service of services) {
+                if (service.uuid.startsWith('00001800') || service.uuid.startsWith('00001801') || service.uuid.startsWith('0000180a')) {
+                    continue;
+                }
+                const characteristics = await service.getCharacteristics();
+                for (const char of characteristics) {
+                    if (!txCharacteristic && (char.properties.notify || char.properties.indicate)) {
+                        txCharacteristic = char;
+                    }
+                    if (!rxCharacteristic && (char.properties.write || char.properties.writeWithoutResponse)) {
+                        rxCharacteristic = char;
+                    }
+                }
+            }
+
+            if (!rxCharacteristic || !txCharacteristic) {
+                throw new Error('Не найдены каналы RX/TX в адаптере.');
+            }
+
+            await txCharacteristic.startNotifications();
+            txCharacteristic.removeEventListener('characteristicvaluechanged', handleIncomingData);
+            txCharacteristic.addEventListener('characteristicvaluechanged', handleIncomingData);
+
+            isConnected = true;
+            telemetry.lastTickTime = Date.now();
+            setConnectionStatus('connected', 'ELM327 Активен');
+            logToTerminal(`Успешно подключено! RX: ${rxCharacteristic.uuid.substring(0, 8)}`, 'received');
+
+            const prof = CAR_PROFILES[appConfig.profile] || CAR_PROFILES.outlander;
+            setTimeout(() => sendCommandDirect("ATZ\r"), 250);
+            setTimeout(() => sendCommandDirect("ATE0\r"), 850);
+            setTimeout(() => sendCommandDirect("ATH0\r"), 1250);
+            setTimeout(() => sendCommandDirect(prof.initProtocol + "\r"), 1650);
+            setTimeout(() => sendCommandDirect("ATRV\r"), 2100);
+            setTimeout(() => startAutoPolling(), 2500);
+        }
+
+        async function trySilentAutoConnect() {
+            if (!appConfig.autoConnect || isConnected || isSimulation) return;
+            if (!navigator.bluetooth) return;
+
+            try {
+                if (navigator.bluetooth.getDevices) {
+                    const devices = await navigator.bluetooth.getDevices();
+                    if (devices && devices.length > 0) {
+                        logToTerminal('Найдено сохранённое устройство BLE. Автоподключение...', 'system');
+                        await connectToGattDevice(devices[0]);
+                        return;
+                    }
+                }
+            } catch (err) {
+                logToTerminal('Автоподключение ожидает касания экрана: ' + err.message, 'system');
+            }
+        }
+
+        async function requestAndConnectBluetooth() {
+            if (isSimulation) {
+                toggleSimulation(false);
+            }
+            if (isConnected) {
+                if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                    bluetoothDevice.gatt.disconnect();
+                }
+                onDisconnected();
+                return;
+            }
+
+            try {
+                setConnectionStatus('connecting', 'Поиск...');
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: KNOWN_OBD_SERVICES
+                });
+                await connectToGattDevice(device);
+            } catch (err) {
+                setConnectionStatus('disconnected', 'Подключить');
+                logToTerminal('Ошибка: ' + err.message, 'error');
+            }
+        }
+
+        function onDisconnected() {
+            isConnected = false;
+            stopAutoPolling();
+            saveTelemetryAndHistory();
+            setConnectionStatus('disconnected', 'Отключено');
+            logToTerminal('Связь с ELM327 потеряна.', 'error');
+
+            if (appConfig.autoConnect && bluetoothDevice && !isSimulation) {
+                setTimeout(async () => {
+                    if (!isConnected && !isSimulation && bluetoothDevice) {
+                        try {
+                            await connectToGattDevice(bluetoothDevice);
+                        } catch (_) {}
+                    }
+                }, 4000);
+            }
+        }
+
+        function handleIncomingData(event) {
+            const chunk = new TextDecoder().decode(event.target.value);
+            rxBuffer += chunk;
+            if (rxBuffer.includes('>') || rxBuffer.includes('\r') || rxBuffer.includes('\n')) {
+                const lines = rxBuffer.split(/[\r\n>]+/);
+                rxBuffer = lines.pop() || "";
+                for (const line of lines) {
+                    if (line.trim().length > 0) {
+                        parseOBDResponse(line.trim());
+                    }
+                }
+            }
+        }
+
+        async function sendCommandDirect(cmd) {
+            if (isSimulation) {
+                simulateResponse(cmd);
+                return;
+            }
+            if (!rxCharacteristic || !isConnected) return;
+            try {
+                const data = new TextEncoder().encode(cmd);
+                if (rxCharacteristic.properties.writeWithoutResponse) {
+                    await rxCharacteristic.writeValueWithoutResponse(data);
+                } else {
+                    await rxCharacteristic.writeValue(data);
+                }
+                logToTerminal(`> ${cmd.trim()}`, 'sent');
+            } catch (e) {
+                logToTerminal(`Ошибка отправки: ${e.message}`, 'error');
+            }
+        }
+
+        function startAutoPolling() {
+            stopAutoPolling();
+            if (!isConnected && !isSimulation) return;
+
+            const commandsQueue = [
+                "010C\r",
+                "010D\r",
+                "0105\r",
+                "ATRV\r",
+                "0110\r",
+                "010B\r",
+                "0104\r"
+            ];
+
+            pollingTimer = setInterval(() => {
+                if (!isConnected && !isSimulation) {
+                    stopAutoPolling();
+                    return;
+                }
+                const cmd = commandsQueue[pollStep % commandsQueue.length];
+                pollStep++;
+                sendCommandDirect(cmd);
+            }, Math.max(200, Math.round(appConfig.pollMs / 3)));
+        }
+
+        function stopAutoPolling() {
+            if (pollingTimer) {
+                clearInterval(pollingTimer);
+                pollingTimer = null;
+            }
+        }
+
+        function parseOBDResponse(rawLine) {
+            logToTerminal(rawLine, 'received');
+
+            const voltMatch = rawLine.match(/(\d{1,2}\.\d)\s*V/i);
+            if (voltMatch) {
+                telemetry.voltage = parseFloat(voltMatch[1]);
+                updateDashboardUI();
+                return;
+            }
+
+            const clean = rawLine.replace(/\s+/g, '').toUpperCase();
+
+            if (clean.includes('410C')) {
+                const i = clean.indexOf('410C');
+                const hex = clean.substring(i + 4, i + 8);
+                if (hex.length === 4) {
+                    const rpm = parseInt(hex, 16) / 4;
+                    if (!isNaN(rpm)) telemetry.rpm = rpm;
+                }
+            }
+            if (clean.includes('410D')) {
+                const i = clean.indexOf('410D');
+                const hex = clean.substring(i + 4, i + 6);
+                if (hex.length === 2) {
+                    const spd = parseInt(hex, 16);
+                    if (!isNaN(spd)) telemetry.speed = spd;
+                }
+            }
+            if (clean.includes('4105')) {
+                const i = clean.indexOf('4105');
+                const hex = clean.substring(i + 4, i + 6);
+                if (hex.length === 2) {
+                    const tmp = parseInt(hex, 16) - 40;
+                    if (!isNaN(tmp)) telemetry.temp = tmp;
+                }
+            }
+            if (clean.includes('4110')) {
+                const i = clean.indexOf('4110');
+                const hex = clean.substring(i + 4, i + 8);
+                if (hex.length === 4) {
+                    const maf = parseInt(hex, 16) / 100;
+                    if (!isNaN(maf)) telemetry.maf = maf;
+                }
+            }
+            if (clean.includes('410B')) {
+                const i = clean.indexOf('410B');
+                const hex = clean.substring(i + 4, i + 6);
+                if (hex.length === 2) {
+                    const map = parseInt(hex, 16);
+                    if (!isNaN(map)) telemetry.map = map;
+                }
+            }
+            if (clean.includes('4104')) {
+                const i = clean.indexOf('4104');
+                const hex = clean.substring(i + 4, i + 6);
+                if (hex.length === 2) {
+                    const load = (parseInt(hex, 16) * 100) / 255;
+                    if (!isNaN(load)) telemetry.load = load;
+                }
+            }
+
+            updateDashboardUI();
+        }
+
+        // ==================== РЕЖИМ СИМУЛЯЦИИ ====================
+        function toggleSimulation(forceState) {
+            isSimulation = typeof forceState === 'boolean' ? forceState : !isSimulation;
+            const simBtn = document.getElementById('simToggleBtn');
+            if (isSimulation) {
+                isConnected = true;
+                telemetry.lastTickTime = Date.now();
+                setConnectionStatus('sim', 'Симуляция');
+                simBtn.classList.add('ring-2', 'ring-amber-400', 'text-amber-300');
+                telemetry.temp = 88;
+                telemetry.voltage = 14.2;
+                startAutoPolling();
+            } else {
+                isConnected = false;
+                stopAutoPolling();
+                setConnectionStatus('disconnected', 'Подключить');
+                simBtn.classList.remove('ring-2', 'ring-amber-400', 'text-amber-300');
+            }
+        }
+
+        function simulateResponse(cmd) {
+            const c = cmd.trim().toUpperCase();
+            setTimeout(() => {
+                if (c === '010C') {
+                    const r = Math.round(1500 + Math.sin(Date.now() / 1300) * 750);
+                    const hex = (r * 4).toString(16).toUpperCase().padStart(4, '0');
+                    parseOBDResponse(`41 0C ${hex.slice(0, 2)} ${hex.slice(2, 4)}`);
+                } else if (c === '010D') {
+                    // Периодически имитируем стоянку (0 км/ч), чтобы было видно тиканье таймера стоянки
+                    const wave = Math.cos(Date.now() / 2500);
+                    const s = wave < -0.4 ? 0 : Math.max(0, Math.round(52 + wave * 35));
+                    const hex = s.toString(16).toUpperCase().padStart(2, '0');
+                    parseOBDResponse(`41 0D ${hex}`);
+                } else if (c === '0105') {
+                    parseOBDResponse(`41 05 80`);
+                } else if (c === 'ATRV') {
+                    const v = (14.1 + Math.sin(Date.now() / 2000) * 0.2).toFixed(1);
+                    parseOBDResponse(`${v}V`);
+                } else if (c === '010B') {
+                    const map = Math.round(45 + Math.sin(Date.now() / 1300) * 20);
+                    parseOBDResponse(`41 0B ${map.toString(16).toUpperCase().padStart(2, '0')}`);
+                } else {
+                    parseOBDResponse('OK');
+                }
+            }, 60);
+        }
+
+        // ==================== ОБРАБОТЧИКИ СОБЫТИЙ И МОДАЛОК ====================
+        const settingsModal = document.getElementById('settingsModal');
+        const terminalModal = document.getElementById('terminalModal');
+        const statsModal = document.getElementById('statsModal');
+        const resetConfirmModal = document.getElementById('resetConfirmModal');
+
+        document.getElementById('openSettingsBtn').addEventListener('click', () => settingsModal.classList.remove('hidden'));
+        document.getElementById('closeSettingsBtn').addEventListener('click', () => settingsModal.classList.add('hidden'));
+        document.getElementById('openTerminalBtn').addEventListener('click', () => terminalModal.classList.remove('hidden'));
+        document.getElementById('closeTerminalBtn').addEventListener('click', () => terminalModal.classList.add('hidden'));
+
+        document.getElementById('openStatsBtn').addEventListener('click', openStatsModal);
+        document.getElementById('quickStatsBadge').addEventListener('click', openStatsModal);
+        document.getElementById('closeStatsBtn').addEventListener('click', () => statsModal.classList.add('hidden'));
+
+        // Корректировка цены топлива (в рублях)
+        function updateFuelPrice(newPrice) {
+            const p = Math.max(1, Math.min(999, parseFloat(newPrice) || 58.5));
+            appConfig.fuelPrice = Math.round(p * 10) / 10;
+            fuelPriceInput.value = appConfig.fuelPrice;
+            saveConfig();
+            updateDashboardUI();
+            drawTripChart();
+        }
+
+        fuelPriceInput.addEventListener('change', (e) => updateFuelPrice(e.target.value));
+        document.getElementById('priceMinusBtn').addEventListener('click', () => updateFuelPrice(appConfig.fuelPrice - 0.5));
+        document.getElementById('pricePlusBtn').addEventListener('click', () => updateFuelPrice(appConfig.fuelPrice + 0.5));
+
+        // Переключение вкладок графика: День, Неделя, Месяц, Год
+        document.querySelectorAll('.period-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentChartPeriod = btn.getAttribute('data-period');
+                document.querySelectorAll('.period-tab').forEach(b => {
+                    b.classList.remove('tab-active');
+                    b.classList.add('text-slate-300');
+                });
+                btn.classList.add('tab-active');
+                btn.classList.remove('text-slate-300');
+
+                // Для недели показываем выбор диапазона из 2 дат календаря
+                if (currentChartPeriod === 'week') {
+                    calendarEndInput.classList.remove('hidden');
+                    calendarDash.classList.remove('hidden');
+                } else {
+                    calendarEndInput.classList.add('hidden');
+                    calendarDash.classList.add('hidden');
+                }
+                drawTripChart();
+            });
+        });
+
+        // Переключение метрики графика: Рубли / Литры / Километры
+        document.querySelectorAll('.metric-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentChartMetric = btn.getAttribute('data-metric');
+                document.querySelectorAll('.metric-tab').forEach(b => {
+                    b.classList.remove('tab-active');
+                    b.classList.add('text-slate-300');
+                });
+                btn.classList.add('tab-active');
+                btn.classList.remove('text-slate-300');
+                drawTripChart();
+            });
+        });
+
+        calendarStartInput.addEventListener('change', drawTripChart);
+        calendarEndInput.addEventListener('change', drawTripChart);
+
+        // Кнопка сброса с модальным подтверждением
+        document.getElementById('openResetConfirmBtn').addEventListener('click', () => {
+            resetConfirmModal.classList.remove('hidden');
+        });
+        document.getElementById('cancelResetBtn').addEventListener('click', () => {
+            resetConfirmModal.classList.add('hidden');
+        });
+
+        // Сброс только текущей поездки
+        document.getElementById('confirmResetTripOnlyBtn').addEventListener('click', () => {
+            telemetry.totalDistKm = 0;
+            telemetry.totalFuelL = 0;
+            telemetry.idleSeconds = 0;
+            telemetry.idleFuelL = 0;
+            saveTelemetryAndHistory();
+            resetConfirmModal.classList.add('hidden');
+            updateDashboardUI();
+            drawTripChart();
+        });
+
+        // Полный сброс вместе с историей календаря
+        document.getElementById('confirmResetAllBtn').addEventListener('click', () => {
+            telemetry.totalDistKm = 0;
+            telemetry.totalFuelL = 0;
+            telemetry.idleSeconds = 0;
+            telemetry.idleFuelL = 0;
+            calendarHistory = {};
+            localStorage.removeItem('obd_calendar_history');
+            saveTelemetryAndHistory();
+            resetConfirmModal.classList.add('hidden');
+            updateDashboardUI();
+            drawTripChart();
+        });
+
+        document.getElementById('quickConnectBtn').addEventListener('click', requestAndConnectBluetooth);
+        document.getElementById('modalConnectBtn').addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+            requestAndConnectBluetooth();
+        });
+        document.getElementById('simToggleBtn').addEventListener('click', () => toggleSimulation());
+
+        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
+            }
+        });
+
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.addEventListener('click', () => applyTheme(btn.getAttribute('data-set-theme')));
+        });
+
+        carProfileSelect.addEventListener('change', (e) => applyProfile(e.target.value));
+
+        pollIntervalSelect.value = String(appConfig.pollMs);
+        pollIntervalSelect.addEventListener('change', (e) => {
+            appConfig.pollMs = parseInt(e.target.value, 10);
+            saveConfig();
+            if (isConnected || isSimulation) startAutoPolling();
+        });
+
+        autoConnectToggle.checked = appConfig.autoConnect;
+        autoConnectToggle.addEventListener('change', (e) => {
+            appConfig.autoConnect = e.target.checked;
+            saveConfig();
+        });
+
+        document.getElementById('clearLogBtn').addEventListener('click', () => {
+            terminalOutput.innerHTML = '<div class="text-slate-500">// Лог очищен.</div>';
+        });
+
+        document.getElementById('cmdForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const input = document.getElementById('cmdInput');
+            let val = input.value.trim();
+            if (!val) return;
+            if (!val.endsWith('\r')) val += '\r';
+            sendCommandDirect(val);
+            input.value = '';
+        });
+
+        document.querySelectorAll('.quick-cmd').forEach(btn => {
+            btn.addEventListener('click', () => sendCommandDirect(btn.getAttribute('data-cmd')));
+        });
+
+        window.addEventListener('resize', () => {
+            if (!statsModal.classList.contains('hidden')) drawTripChart();
+        });
+
+        // Постоянный секундный таймер для точного отсчёта времени стоянки даже между ответами ЭБУ
+        setInterval(() => {
+            if (isConnected || isSimulation) {
+                updateDashboardUI();
+            }
+        }, 1000);
+
+        // ==================== СТАРТ ПРИЛОЖЕНИЯ ====================
+        applyTheme(appConfig.theme);
+        applyProfile(appConfig.profile);
+        renderWidgetCheckboxes();
+        renderDashboardGrid();
+
+        window.addEventListener('load', () => {
+            setTimeout(trySilentAutoConnect, 500);
+        });
+    </script>
+</body>
+</html>
